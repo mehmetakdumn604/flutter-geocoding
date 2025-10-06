@@ -7,19 +7,7 @@
 
 #import "include/geocoding_ios/GeocodingHandler.h"
 
-@implementation GeocodingHandler {
-    CLGeocoder* _geocoder;
-}
-
-- (id)init {
-    self = [super init];
-    
-    if (self) {
-        _geocoder = [[CLGeocoder alloc] init];
-    }
-    
-    return self;
-}
+@implementation GeocodingHandler
 
 - (void) geocodeFromAddress: (NSString *)address
                      locale: (NSLocale *)locale
@@ -31,50 +19,83 @@
         return;
     }
     
-    [_geocoder geocodeAddressString:address
-                           inRegion:nil
-                    preferredLocale:locale
-                  completionHandler:^(NSArray< CLPlacemark *> *__nullable placemarks, NSError *__nullable error)
-     {
-        [GeocodingHandler completeGeocodingWith:placemarks
-                                          error:error
-                                        success:successHandler
-                                        failure:failureHandler];
+    MKLocalSearchRequest *searchRequest = [[MKLocalSearchRequest alloc] init];
+    searchRequest.naturalLanguageQuery = address;
+    
+    MKLocalSearch *search = [[MKLocalSearch alloc] initWithRequest:searchRequest];
+    [search startWithCompletionHandler:^(MKLocalSearchResponse * _Nullable response, NSError * _Nullable error) {
+        if (error != nil) {
+            if (error.code == MKErrorPlacemarkNotFound) {
+                failureHandler(@"NOT_FOUND", @"Could not find any result for the supplied address or coordinates.");
+            } else {
+                failureHandler(@"IO_ERROR", error.description);
+            }
+            return;
+        }
+        
+        if (response == nil || response.mapItems.count == 0) {
+            failureHandler(@"NOT_FOUND", @"Could not find any result for the supplied address or coordinates.");
+            return;
+        }
+        
+        NSMutableArray<CLPlacemark *> *placemarks = [NSMutableArray array];
+        for (MKMapItem *mapItem in response.mapItems) {
+            if (mapItem.placemark != nil) {
+                [placemarks addObject:mapItem.placemark];
+            }
+        }
+        
+        if (placemarks.count == 0) {
+            failureHandler(@"NOT_FOUND", @"Could not find any result for the supplied address or coordinates.");
+        } else {
+            successHandler(placemarks);
+        }
     }];
-    return;
 }
 
 - (void) geocodeToAddress: (CLLocation *)location
                    locale: (NSLocale *)locale
                   success: (GeocodingSuccess)successHandler
                   failure: (GeocodingFailure)failureHandler  {
-    [_geocoder reverseGeocodeLocation:location
-                      preferredLocale:locale
-                    completionHandler:^(NSArray< CLPlacemark *> *__nullable placemarks, NSError *__nullable error) {
-        [GeocodingHandler completeGeocodingWith:placemarks
-                                          error:error
-                                        success:successHandler
-                                        failure:failureHandler];
-    }];
-}
-
-+ (void) completeGeocodingWith: (NSArray<CLPlacemark *> *) placemarks
-                         error: (NSError *) error
-                       success: (GeocodingSuccess)successHandler
-                       failure: (GeocodingFailure) failureHandler {
-    if (error != nil) {
-        if(error.code == kCLErrorGeocodeFoundNoResult){
+    if (location == nil) {
+        failureHandler(@"ARGUMENT_ERROR", @"Please supply a valid location");
+        return;
+    }
+    
+    MKLocalSearchRequest *searchRequest = [[MKLocalSearchRequest alloc] init];
+    MKCoordinateRegion region = MKCoordinateRegionMakeWithDistance(location.coordinate, 100, 100);
+    searchRequest.region = region;
+    
+    MKLocalSearch *search = [[MKLocalSearch alloc] initWithRequest:searchRequest];
+    [search startWithCompletionHandler:^(MKLocalSearchResponse * _Nullable response, NSError * _Nullable error) {
+        if (error != nil) {
+            if (error.code == MKErrorPlacemarkNotFound) {
+                failureHandler(@"NOT_FOUND", @"Could not find any result for the supplied address or coordinates.");
+            } else {
+                failureHandler(@"IO_ERROR", error.description);
+            }
+            return;
+        }
+        
+        if (response == nil || response.mapItems.count == 0) {
+            failureHandler(@"NOT_FOUND", @"Could not find any result for the supplied address or coordinates.");
+            return;
+        }
+        
+        NSMutableArray<CLPlacemark *> *placemarks = [NSMutableArray array];
+        for (MKMapItem *mapItem in response.mapItems) {
+            if (mapItem.placemark != nil) {
+                [placemarks addObject:mapItem.placemark];
+            }
+        }
+        
+        if (placemarks.count == 0) {
             failureHandler(@"NOT_FOUND", @"Could not find any result for the supplied address or coordinates.");
         } else {
-            failureHandler(@"IO_ERROR", error.description);
+            successHandler(placemarks);
         }
-    } else if (placemarks == nil) {
-        failureHandler(@"NOT_FOUND", @"Could not find any result for the supplied address or coordinates.");
-    } else {
-        successHandler(placemarks);
-    }
+    }];
 }
-
 
 + (NSString *) languageCode:(NSLocale *)locale {
     return [locale languageCode];
